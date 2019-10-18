@@ -13,13 +13,11 @@ CALCULATOR(){
 	local number="$1"
 	local base="$2"
 	while true; do
-		if [ `echo "$number" | awk '{if ($1<1024.0) print "1"; else print "0"}'` -eq 1 ]
-		then
+		if [ `echo "$number" | awk '{if ($1<1024.0) print "1"; else print "0"}'` -eq 1 ]; then
 			echo "$number" "$base"
 			break
 		else
-			if [ $base -eq 0 ]
-			then
+			if [ $base -eq 0 ]; then
 				base=$((base+1))
 				number=`echo "$number" | awk '{printf "%.2f", $1/8.0}'`
 			else
@@ -37,25 +35,26 @@ MEMORY_INFO(){
 		total_memory=`sysctl -n hw.realmem`
 		page_size=`sysctl -n hw.pagesize`
 		free_pages=`sysctl -n vm.stats.vm.v_free_count`
-		free_memory=$((page_size*free_pages))
-		used_memory=$((total_memory-free_memory))
+		cache_pages=`sysctl -n vm.stats.vm.v_cache_count`
+		inactive_pages=`sysctl -n vm.stats.vm.v_inactive_count`
+		avail_pages=$((free_pages+cache_pages+inactive_pages))
+		avail_memory=$((page_size*avail_pages))
+		used_memory=$((total_memory-avail_memory))
 		percentage=`echo "$used_memory" "$total_memory" | awk '{printf "%d", ($1/$2)*100}'`
 
 		read number base < <(CALCULATOR $total_memory 1)
 		msg="${msg}Total: ${number} ${unit_array[${base}]}\n"
 		read number base < <(CALCULATOR $used_memory 1)
 		msg="${msg}Used: ${number} ${unit_array[${base}]}\n"
-		read number base < <(CALCULATOR $free_memory 1)
+		read number base < <(CALCULATOR $avail_memory 1)
 		msg="${msg}Free: ${number} ${unit_array[${base}]}\n"
 
-		echo $percentage | dialog --title "SIM" --gauge "$msg" 30 100 0
+		dialog --title "SIM" --mixedgauge "$msg" 30 100 "$percentage"
 		read -n 1 -t 3
-		if [ $? -eq 0 ]
-		then
+		if [ $? -eq 0 ]; then
 			input=`printf '%d' "'$REPLY"`
 			input=`echo -e "$input"`
-			if [ $input -eq 0 ]
-			then
+			if [ $input -eq 0 ]; then
 				break
 			fi
 		fi
@@ -75,22 +74,80 @@ NETWORK_INTERFACE(){
 	network_interface=`ifconfig -a | grep "^[a-z]" | awk -F ":" '{print $1}' | xargs echo`
 	read -a network_interface_array <<< "$network_interface"
 	command="dialog --title 'SIM' --stdout --menu 'Network Interfaces' 30 100 5"
-	for i in "${network_interface_array[@]}"
-	do
+	for i in "${network_interface_array[@]}"; do
 		command="${command} ${i} '*'"
 	done
 	network_interface_index=`eval $command`
-	if [ $? -eq 0 ]
-	then
+	if [ $? -eq 0 ]; then
 		NETWORK_INFO "$network_interface_index"
 	else
 		MAIN_MENU
 	fi
-	
+}
+
+FILE_INFO(){
+	unit_array=(b B KB MB GB TB)
+	file_info=`file "$1" | awk -F ': ' '{print $2}'`
+	file_size=`ls -ll "$1" | awk '{print $5}'`
+	read number base < <(CALCULATOR $file_size 1)
+	file "$1" | grep text
+	if [ "$?" -eq 1 ]; then
+		dialog --title "SIM" --msgbox "<File Name>: $2\n<File Info>: $file_info\n<File Size>: $number ${unit_array[${base}]}" 30 100
+	else
+		dialog --title "SIM" --no-label "Edit" --yesno "<File Name>: $2\n<File Info>: $file_info\n<File Size>: $number ${unit_array[${base}]}" 30 100
+		if [ "$?" -eq 1 ]; then
+			$EDITOR "$1"
+		fi
+	fi
+	FILE_BROWSER "$(dirname "$1")"
 }
 
 FILE_BROWSER(){
-	sleep 3
+	if [ "$1" != "/" ]; then
+		current_dir=`echo "$1" | awk '{print $1 "/"}'`
+	else
+		current_dir="$1"
+	fi
+	command="dialog --title 'SIM' --stdout --menu '$1' 30 100 50"
+	file_type=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{if($1 ~ /^d/) {print "d"} else {print "f"}}' | xargs echo`
+	read -a file_type_array <<< "$file_type"
+	file_name=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{print $9}' | xargs echo`
+	read -a file_name_array <<< "$file_name"
+	temp=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{print $9}' | xargs echo`
+	read -a temp_array <<< "$temp"
+	for ((i = 0 ; i < "${#temp_array[@]}" ; i++)); do
+		temp_array["$i"]=`echo $1 "${temp_array[$i]}" | awk '{print $1 "/" $2}'`
+	done
+	file_mime=`printf "%s\n" "${temp_array[@]}" | xargs file --mime-type | awk '{print $2}' | xargs echo`
+	read -a file_mime_array <<< "$file_mime"
+	for ((i = 0 ; i < "${#file_type_array[@]}" ; i++)); do
+  		command="${command} '${file_name_array[$i]}' '${file_mime_array[$i]}'"
+	done
+	file_name_index=`eval $command`
+	if [ "$file_name_index" == "." ]; then
+		FILE_BROWSER "$1"
+	elif [ "$file_name_index" == ".." ]; then
+		FILE_BROWSER "$(dirname "$1")"
+	else
+		if [ "$1" != "/" ]; then
+			next_dir="$1/$file_name_index"
+		else
+			next_dir="$1$file_name_index"
+		fi
+		for ((i = 0 ; i < "${#file_type_array[@]}" ; i++)); do
+			if [ "$file_name_index" == "${file_name_array[$i]}" ]; then
+				if [ "d" == "${file_type_array[$i]}" ]; then
+					FILE_BROWSER $next_dir
+				else
+					FILE_INFO $next_dir $file_name_index
+				fi
+			fi
+		done
+	fi
+}
+
+FILE_MENU(){
+	FILE_BROWSER $1
 	MAIN_MENU
 }
 
@@ -113,7 +170,7 @@ MAIN_MENU(){
 			NETWORK_INTERFACE
 		;;
 		4)
-			FILE_BROWSER
+			FILE_MENU `pwd`
 		;;
 		5)
 			CPU_USAGE
