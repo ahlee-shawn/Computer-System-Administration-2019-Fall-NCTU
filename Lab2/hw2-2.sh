@@ -115,12 +115,12 @@ FILE_BROWSER(){
 	read -a file_name_array <<< "$file_name"
 	temp=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{print $9}' | xargs echo`
 	read -a temp_array <<< "$temp"
-	for ((i = 0 ; i < "${#temp_array[@]}" ; i++)); do
+	for ((i = 0; i < "${#temp_array[@]}"; i++)); do
 		temp_array["$i"]=`echo $1 "${temp_array[$i]}" | awk '{print $1 "/" $2}'`
 	done
 	file_mime=`printf "%s\n" "${temp_array[@]}" | xargs file --mime-type | awk '{print $2}' | xargs echo`
 	read -a file_mime_array <<< "$file_mime"
-	for ((i = 0 ; i < "${#file_type_array[@]}" ; i++)); do
+	for ((i = 0; i < "${#file_type_array[@]}"; i++)); do
   		command="${command} '${file_name_array[$i]}' '${file_mime_array[$i]}'"
 	done
 	file_name_index=`eval $command`
@@ -134,7 +134,7 @@ FILE_BROWSER(){
 		else
 			next_dir="$1$file_name_index"
 		fi
-		for ((i = 0 ; i < "${#file_type_array[@]}" ; i++)); do
+		for ((i = 0; i < "${#file_type_array[@]}"; i++)); do
 			if [ "$file_name_index" == "${file_name_array[$i]}" ]; then
 				if [ "d" == "${file_type_array[$i]}" ]; then
 					FILE_BROWSER $next_dir
@@ -152,7 +152,33 @@ FILE_MENU(){
 }
 
 CPU_USAGE(){
-	sleep 3
+	while true; do
+		msg="CPU Loading\n"
+		cpu_core=`sysctl -n hw.ncpu`
+		cpu_info=`top -P -d 2 -s 0.5 | grep '^CPU' | tail -n "$cpu_core" | awk '{print $2 " " $3+$5 " " $7+$9 " " $11+0}' | xargs echo`
+		read -a cpu_info_array <<< "$cpu_info"
+		cpu_loading=`echo "$cpu_core" | awk '{print $1*100.0}'`
+		for ((i = 0; i < "$cpu_core"; i++)); do
+			index0=$((i*4))
+			index1=$((i*4+1))
+			index2=$((i*4+2))
+			index3=$((i*4+3))
+			cpu_loading=`echo "$cpu_loading" "${cpu_info_array[$index3]}" | awk '{printf "%.2f", $1-$2}'`
+			msg="${msg}CPU${cpu_info_array[$index0]} USER: ${cpu_info_array[$index1]}% SYST: ${cpu_info_array[$index2]}% IDLE: ${cpu_info_array[$index3]}%\n"
+		done
+
+		percentage=`echo "$cpu_loading" "$cpu_core" | awk '{printf "%d", $1/$2}'`
+		command="dialog --title 'SIM' --mixedgauge '$msg' 30 100 "$percentage""
+		dialog --title "SIM" --mixedgauge "$msg" 30 100 "$percentage"
+		read -n 1 -t 3
+		if [ $? -eq 0 ]; then
+			input=`printf '%d' "'$REPLY"`
+			input=`echo -e "$input"`
+			if [ $input -eq 0 ]; then
+				break
+			fi
+		fi
+	done
 	MAIN_MENU
 }
 
