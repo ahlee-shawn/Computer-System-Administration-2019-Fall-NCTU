@@ -90,34 +90,26 @@ FILE_INFO(){
 	file_info=`file "$1" | awk -F ': ' '{print $2}'`
 	file_size=`ls -ll "$1" | awk '{print $5}'`
 	read number base < <(CALCULATOR $file_size 1)
-	file "$1" | grep text
+	temp=`file "$1" | grep text`
 	if [ "$?" -eq 1 ]; then
-		dialog --title "SIM" --msgbox "<File Name>: $2\n<File Info>: $file_info\n<File Size>: $number ${unit_array[${base}]}" 30 100
+		dialog --title "SIM" --msgbox "<File Name>: $1\n<File Info>: $file_info\n<File Size>: $number ${unit_array[${base}]}" 30 100
 	else
-		dialog --title "SIM" --no-label "Edit" --yesno "<File Name>: $2\n<File Info>: $file_info\n<File Size>: $number ${unit_array[${base}]}" 30 100
+		dialog --title "SIM" --no-label "Edit" --yesno "<File Name>: $1\n<File Info>: $file_info\n<File Size>: $number ${unit_array[${base}]}" 30 100
 		if [ "$?" -eq 1 ]; then
 			$EDITOR "$1"
 		fi
 	fi
-	FILE_BROWSER "$(dirname "$1")"
+	FILE_BROWSER
 }
 
 FILE_BROWSER(){
-	if [ "$1" != "/" ]; then
-		current_dir=`echo "$1" | awk '{print $1 "/"}'`
-	else
-		current_dir="$1"
-	fi
-	command="dialog --title 'SIM' --stdout --menu '$1' 30 100 50"
-	file_type=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{if($1 ~ /^d/) {print "d"} else {print "f"}}' | xargs echo`
+	command="dialog --title 'SIM' --stdout --menu "`pwd`" 30 100 50"
+	file_type=`ls -a -ll | grep '^[-d]' | awk '{if($1 ~ /^d/) {print "d"} else {print "f"}}' | xargs echo`
 	read -a file_type_array <<< "$file_type"
-	file_name=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{print $9}' | xargs echo`
+	file_name=`ls -a -ll | grep '^[-d]' | awk '{print $9}' | xargs echo`
 	read -a file_name_array <<< "$file_name"
-	temp=`ls -a -ll "$current_dir" | grep '^[-d]' | awk '{print $9}' | xargs echo`
+	temp=`ls -a -ll | grep '^[-d]' | awk '{print $9}' | xargs echo`
 	read -a temp_array <<< "$temp"
-	for ((i = 0; i < "${#temp_array[@]}"; i++)); do
-		temp_array["$i"]=`echo $1 "${temp_array[$i]}" | awk '{print $1 "/" $2}'`
-	done
 	file_mime=`printf "%s\n" "${temp_array[@]}" | xargs file --mime-type | awk '{print $2}' | xargs echo`
 	read -a file_mime_array <<< "$file_mime"
 	for ((i = 0; i < "${#file_type_array[@]}"; i++)); do
@@ -125,21 +117,23 @@ FILE_BROWSER(){
 	done
 	file_name_index=`eval $command`
 	if [ "$file_name_index" == "." ]; then
-		FILE_BROWSER "$1"
+		cd .
+		FILE_BROWSER
 	elif [ "$file_name_index" == ".." ]; then
-		FILE_BROWSER "$(dirname "$1")"
-	else
-		if [ "$1" != "/" ]; then
-			next_dir="$1/$file_name_index"
+		if [ `pwd` == "/home" ]; then
+			cd /usr
 		else
-			next_dir="$1$file_name_index"
+			cd ..
 		fi
+		FILE_BROWSER
+	else
 		for ((i = 0; i < "${#file_type_array[@]}"; i++)); do
 			if [ "$file_name_index" == "${file_name_array[$i]}" ]; then
 				if [ "d" == "${file_type_array[$i]}" ]; then
-					FILE_BROWSER $next_dir
+					cd "$file_name_index"
+					FILE_BROWSER
 				else
-					FILE_INFO $next_dir $file_name_index
+					FILE_INFO $file_name_index
 				fi
 			fi
 		done
@@ -147,7 +141,7 @@ FILE_BROWSER(){
 }
 
 FILE_MENU(){
-	FILE_BROWSER $1
+	FILE_BROWSER
 	MAIN_MENU
 }
 
@@ -196,7 +190,8 @@ MAIN_MENU(){
 			NETWORK_INTERFACE
 		;;
 		4)
-			FILE_MENU `pwd`
+			cd "$present_working_directory"
+			FILE_MENU
 		;;
 		5)
 			CPU_USAGE
@@ -205,6 +200,7 @@ MAIN_MENU(){
 }
 
 # Main Function
+present_working_directory=`pwd`
 trap "clear; exit 1" 2
 MAIN_MENU
 clear
