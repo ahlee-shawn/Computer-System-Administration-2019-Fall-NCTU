@@ -1,0 +1,167 @@
+#!/usr/local/bin/bash
+
+PRINT_ERROR(){
+	echo "$1"
+	exit 1
+}
+
+CHECK_DATASET(){
+	datasetList=`zfs list | awk '{print $1}' | awk '{if(NR > 1 ) { print }}'`
+	for tmp in $datasetList; 
+	do
+		if [ $1 = $tmp ] ; 
+		then
+			return
+		fi
+	done
+	PRINT_ERROR "Dataset does not exist"
+}
+
+CREATE(){
+	dataset=$1
+	rotationCount=$2
+	CHECK_DATASET $dataset
+	if [ -z $rotationCount ]; then
+		rotationCount=20
+	fi
+	snapshotCount=`zfs list -t snapshot | awk '{count++} END {print count-1}'`
+	if [ $snapshotCount -ge $rotationCount ]; then
+		temp=$((snapshotCount-rotationCount))
+		temp=$((temp+1))
+		toBeDeleted=`zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | head -n $temp | awk '{print $1 "@" $2}' | xargs echo`
+		read -a toBeDeletedArray <<< "$toBeDeleted"
+		for i in "${toBeDeletedArray[@]}"; do
+			zfs destroy $i
+			if [ $? -eq 0 ];
+			then
+				echo "Destroy $i"
+			fi
+		done
+	fi
+	timestamp=`date +"%Y-%m-%d-%H:%M:%S"`
+	zfs snapshot "$dataset@$timestamp"
+	if [ $? -eq 0 ];
+	then
+		echo "Snap $dataset@$timestamp"
+	fi
+}
+
+LIST(){
+	dataset=$1
+	id=$2
+	printf "%-3s\t%-15s\t\t%-15s\n" "ID" "Dataset" "Time"
+	if [ -z  $dataset ] && [ -z $id ]; then
+		zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}'
+	elif [ $dataset ] && [ $id ]; then
+		zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | grep $dataset | grep ^$id
+	else
+		if [[ $dataset =~ ^[0-9]+$ ]]; then
+			zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | grep ^$dataset
+		else
+			zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | grep $dataset
+		fi
+	fi
+}
+
+DELETE(){
+	dataset=$1
+	id=$2
+	if [ -z  $dataset ] && [ -z $id ];then
+		toBeDeleted=`zfs list -t snapshot | awk '{if(NR > 1 ) { print }}' | awk '{print $1}' | xargs echo`
+		read -a toBeDeletedArray <<< "$toBeDeleted"
+		for i in "${toBeDeletedArray[@]}"; do
+			zfs destroy $i
+			if [ $? -eq 0 ];
+			then
+				echo "Destroy $i"
+			fi
+		done
+	elif [ $dataset ] && [ $id ]; then
+		toBeDeleted=`zfs list -t snapshot | awk '{if(NR > 1 ) { print }}' | grep ^$dataset@ | awk '{print $1}' | sort -k 1,1 | sed -n "$id"p`
+		zfs destroy $toBeDeleted
+		if [ $? -eq 0 ];
+		then
+			echo "Destroy $toBeDeleted"
+		fi
+	else
+		if [[ $dataset =~ ^[0-9]+$ ]]; then
+			toBeDeleted=`zfs list -t snapshot | awk '{if(NR > 1 ) { print }}' | awk '{print $1}' | sort -k 1,1 | sed -n "$dataset"p`
+			zfs destroy $toBeDeleted
+			if [ $? -eq 0 ];
+			then
+				echo "Destroy $toBeDeleted"
+			fi
+		else
+			toBeDeleted=`zfs list -t snapshot | awk '{if(NR > 1 ) { print }}' | grep ^$dataset@ | awk '{print $1}' | xargs echo`
+			read -a toBeDeletedArray <<< "$toBeDeleted"
+			for i in "${toBeDeletedArray[@]}"; do
+				zfs destroy $i
+				if [ $? -eq 0 ];
+				then
+					echo "Destroy $i"
+				fi
+			done
+		fi
+	fi
+}
+
+EXPORT(){
+	dataset=$1
+	id=$2
+	if [ -z $id ]; then
+		id=1
+	fi
+	toBeExported=`zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | grep ^$dataset | awk '{print $1 "@" $2}' | sed -n "$id"p `
+	zfs send $toBeExported | gzip | openssl enc -e -aes256 -out /tmp/$toBeExported.gz.enc
+	if [ $? -eq 0 ];
+	then
+		echo "Export $toBeExported to /tmp/$toBeExported.gz.enc"
+	fi
+}
+
+IMPORT(){
+	filename=$1
+	dataset=$2
+	timestamp=`date +"%Y-%m-%d-%H:%M:%S"`
+	DELETE $dataset
+	openssl enc -d -aes256 -in $filename | gunzip | zfs receive -F "$dataset@$timestamp"
+	if [ $? -eq 0 ];
+	then
+		echo "Import $filename to $dataset"
+	fi
+}
+
+PRINT_USAGE(){
+	echo "USAGE: "
+	echo "Create: zbackup DATASET [ROTATION_CNT]"
+	echo "List:   zbackup -l|--list [DATASET|ID|DATASET ID]"
+	echo "Delete: zbackup -d|--delete [DATASET|ID|DATASET ID]"
+	echo "Export: zbackup -e|--export DATASET [ID]"
+	echo "Import: zbackup -i|--import FILENAME DATASET"
+	exit 1
+}
+
+# Main Function
+if [ $# -eq 0 ] || [ $# -gt 2 ]; then
+	PRINT_USAGE
+fi
+case $1 in 
+	-l | --list)
+		LIST $2 $3
+		;;
+	-d | --delete)
+		DELETE $2 $3
+		;;
+	-e | --export)
+		EXPORT $2 $3
+		;;
+	-i | --import)
+		IMPORT $2 $3
+		;;
+	'' | -h | --help)
+		PRINT_USAGE
+		;;
+	*)
+		CREATE $1 $2
+		;;
+esac
