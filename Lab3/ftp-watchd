@@ -1,0 +1,47 @@
+#!/bin/sh
+#
+#
+
+# PROVIDE: pureftpd
+# REQUIRE: NETWORKING SERVERS
+# BEFORE: DAEMON
+# KEYWORD: shutdown
+
+# Add the following lines to /etc/rc.conf to enable pure-ftpd:
+#
+# Add the following lines to /etc/rc.conf to enable uploadscript daemon:
+#
+# ftp_watchd_enable="yes"
+
+. /etc/rc.subr
+
+name=ftp_watchd
+rcvar=ftp_watchd_enable
+
+load_rc_config ${name}
+
+# uploadscript
+command="/usr/local/sbin/pure-uploadscript"
+pidfile_ftp_watchd=${pidfile_ftp_watchd:-"/var/run/pure-uploadscript.pid"}
+ftp_watchd_enable=${ftp_watchd_enable:-"NO"}
+ftp_watchd_uploadscript=${ftp_watchd_uploadscript:-"/usr/home/leeang6969/hw/hw3/uploadscript.sh"}
+# command_args
+command_args="-B -p ${pidfile_ftp_watchd} -r ${ftp_watchd_uploadscript}"
+
+stop_cmd=stop_cmd
+
+stop_cmd()
+{
+	if checkyesno ftp_watchd_enable; then
+		pid=$(check_pidfile ${pidfile_ftp_watchd} ${command})
+		if [ -z $pid ]; then
+			echo "${name} not running? (Check ${pidfile_ftp_watchd})"
+			return 1
+		fi
+		echo "Kill: ${pid}"
+		kill -${sig_stop:-TERM} ${pid}
+		[ $? -ne 0 ] && [ -z "$rc_force" ] && return 1
+	fi
+}
+
+run_rc_command "$1"
