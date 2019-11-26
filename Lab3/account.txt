@@ -1,0 +1,15 @@
+sysadm
+user:	sysadm
+group:	sysadm
+
+ftp-vip1
+user:	vftp1
+group:	vftp1
+
+ftp-vip2
+user:	vftp2
+group:	vftp1
+
+anonymous
+user:	ftp
+group:	ftpuser
