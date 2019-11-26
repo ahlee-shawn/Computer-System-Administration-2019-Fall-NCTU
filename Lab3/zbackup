@@ -6,10 +6,11 @@ PRINT_ERROR(){
 }
 
 CHECK_DATASET(){
+	dataset=$1
 	datasetList=`zfs list | awk '{print $1}' | awk '{if(NR > 1 ) { print }}'`
 	for tmp in $datasetList; 
 	do
-		if [ $1 = $tmp ] ; 
+		if [ $dataset = $tmp ] ; 
 		then
 			return
 		fi
@@ -58,7 +59,7 @@ LIST(){
 		if [[ $dataset =~ ^[0-9]+$ ]]; then
 			zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | grep ^$dataset
 		else
-			zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | grep $dataset
+			zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | grep $dataset' '
 		fi
 	fi
 }
@@ -85,7 +86,7 @@ DELETE(){
 		fi
 	else
 		if [[ $dataset =~ ^[0-9]+$ ]]; then
-			toBeDeleted=`zfs list -t snapshot | awk '{if(NR > 1 ) { print }}' | awk '{print $1}' | sort -k 1,1 | sed -n "$dataset"p`
+			toBeDeleted=`zfs list -t snapshot | awk '{print $1}' | awk '{if(NR > 1 ) { print }}' | awk -F "@" '{print $1 " " $2}' | sort -k 2,2 | awk 'BEGIN {id = 1} {printf "%-3s\t%-15s\t\t%-15s\n", id, $1, $2; id += 1}' | sed -n "$dataset"p | awk '{print $2 "@" $3}'`
 			zfs destroy $toBeDeleted
 			if [ $? -eq 0 ];
 			then
@@ -142,26 +143,42 @@ PRINT_USAGE(){
 }
 
 # Main Function
-if [ $# -eq 0 ] || [ $# -gt 2 ]; then
+if [ $# -eq 0 ] ; then
 	PRINT_USAGE
 fi
 case $1 in 
 	-l | --list)
+		if [ $# -gt 3 ]; then
+			PRINT_USAGE
+		fi
 		LIST $2 $3
 		;;
 	-d | --delete)
+		if [ $# -gt 3 ]; then
+			PRINT_USAGE
+		fi
 		DELETE $2 $3
 		;;
 	-e | --export)
+		if [ $# -gt 3 ]; then
+			PRINT_USAGE
+		fi
 		EXPORT $2 $3
 		;;
 	-i | --import)
-		IMPORT $2 $3
+		if [ $# -eq 3 ]; then
+			IMPORT $2 $3
+		else
+			PRINT_USAGE
+		fi
 		;;
 	'' | -h | --help)
 		PRINT_USAGE
 		;;
 	*)
+		if [ $# -gt 2 ]; then
+			PRINT_USAGE
+		fi
 		CREATE $1 $2
 		;;
 esac
